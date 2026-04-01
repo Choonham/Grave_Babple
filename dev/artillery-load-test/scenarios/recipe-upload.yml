@@ -1,0 +1,163 @@
+# 레시피 등록 부하 테스트
+# 사용 화면: PostRecipeScreen.tsx
+# 엔드포인트: POST /api/recipes
+# !!주의: 실제 서버에 데이터를 생성합니다!!
+# 타겟 서버: https://babpleAlpha.slowflowsoft.com
+
+config:
+  target: "https://babpleAlpha.slowflowsoft.com/api"
+  phases:
+    # 레시피 등록은 쓰기 작업이므로 부하를 무겁게 가져감
+    - duration: 60
+      arrivalRate: 1
+      name: "Low write load - 초당 1명"
+    
+    - duration: 60
+      arrivalRate: 1
+      rampTo: 5
+      name: "Ramp up write load - 1명에서 5명으로"
+    
+    - duration: 60
+      arrivalRate: 5
+      name: "Sustained write load - 초당 5명 유지"
+      
+    - duration: 30
+      arrivalRate: 10
+      name: "Peak write load - 30초간 초당 10명 (집중 업로드)"
+    
+    - duration: 30
+      arrivalRate: 1
+      name: "Cool down"
+  
+  # Auth Token은 scripts/get-token.ps1로 생성됩니다
+  # 유효 토큰은 24시간 후 만료됩니다 - npm run token으로 갱신하세요
+  variables:
+    authToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiM2ZhN2VlYTMtYzliMC00ZjZlLTk2ZDktZDBmODA3YWY1YjMxIiwiZW1haWwiOiJkb2cwMjZAbmF2ZXIuY29tIiwibmlja25hbWUiOiLsnKDsoJXrrYnsuZgiLCJyb2xlIjowLCJpYXQiOjE3NjcxNzEyNjAsImV4cCI6MTc2NzI1NzY2MH0.k6HMQ6AhC9_NXe__jneNKSIX2SQTIZrind66nHOoyas"
+  
+  http:
+    timeout: 300  # 5분 타임아웃 (이미지 업로드 포함)
+  
+  ensure:
+    maxErrorRate: 5
+    p99: 20000  # 20초
+    p95: 15000  # 15초
+  plugins:
+    expect: {}
+
+scenarios:
+  # 시나리오 1: 간단한 레시피 등록 (이미지 없음)
+  - name: "Recipe Upload - Simple"
+    weight: 80
+    flow:
+      # 카테고리 조회
+      - get:
+          url: "/recipes/categories"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          capture:
+            - json: "$.data.situations[0].situation_id"
+              as: "situationId"
+            - json: "$.data.cooking_methods[0].cooking_method_id"
+              as: "methodId"
+            - json: "$.data.main_ingredients[0].main_ingredient_id"
+              as: "mainIngredientId"
+      
+      - think: 5
+      
+      # 재료 검색
+      - get:
+          url: "/ingredients/search"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          qs:
+            search_keyword: "감자"
+          capture:
+            - json: "$.data[0].ingredient_id"
+              as: "ingredient1Id"
+      
+      - think: 5
+      
+      # 레시피 등록
+      - post:
+          url: "/recipes"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+            Content-Type: "application/json"
+          json:
+            title: "부하 테스트 레시피 {{ $randomNumber(1, 100000) }}"
+            description: "Artillery 부하 테스트를 위한 샘플 레시피입니다."
+            situation_id: "{{ situationId }}"
+            cooking_method_id: "{{ methodId }}"
+            main_ingredient_ids: ["{{ mainIngredientId }}"]
+            ingredients:
+              - ingredient_id: "{{ ingredient1Id }}"
+                quantity: 2
+                unit: "개"
+            recipe_steps:
+              - step_number: 1
+                instruction: "재료를 준비합니다."
+              - step_number: 2
+                instruction: "조리합니다."
+            completed_images: []
+          expect:
+            - statusCode: [200, 201]
+
+  # 시나리오 2: 이미지 포함 레시피 (작은 이미지)
+  - name: "Recipe Upload - With Image"
+    weight: 20
+    flow:
+      - get:
+          url: "/recipes/categories"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          capture:
+            - json: "$.data.situations[0].situation_id"
+              as: "situationId"
+            - json: "$.data.cooking_methods[0].cooking_method_id"
+              as: "methodId"
+            - json: "$.data.main_ingredients[0].main_ingredient_id"
+              as: "mainIngredientId"
+      
+      - get:
+          url: "/ingredients/search"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          qs:
+            search_keyword: "양파"
+          capture:
+            - json: "$.data[0].ingredient_id"
+              as: "ingredient1Id"
+      
+      - think: 10
+      
+      # 작은 이미지 포함 레시피
+      - post:
+          url: "/recipes"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+            Content-Type: "application/json"
+          json:
+            title: "이미지 포함 테스트 {{ $randomNumber(1, 100000) }}"
+            description: "이미지가 포함된 부하 테스트 레시피입니다."
+            situation_id: "{{ situationId }}"
+            cooking_method_id: "{{ methodId }}"
+            main_ingredient_ids: ["{{ mainIngredientId }}"]
+            ingredients:
+              - ingredient_id: "{{ ingredient1Id }}"
+                quantity: 1
+                unit: "개"
+            recipe_steps:
+              - step_number: 1
+                instruction: "재료를 손질합니다."
+                image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+            completed_images:
+              - base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+                uri: "test-image.jpg"
+          expect:
+            - statusCode: [200, 201]
+
+# 주의: 이 테스트는 실제 서버에 데이터를 생성합니다.
+# 테스트 후 관리자에게 데이터 정리 요청하세요.
+#
+# Windows 실행 방법:
+# npm run test:upload

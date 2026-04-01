@@ -1,0 +1,145 @@
+# 레시피 상세 조회 부하 테스트
+# 사용 화면: RecipeDetailModal.tsx
+# 엔드포인트: GET /api/recipes/:recipeId
+# 타겟 서버: https://babpleAlpha.slowflowsoft.com
+
+config:
+  target: "https://babpleAlpha.slowflowsoft.com/api"
+  phases:
+    # 1단계: 저규모 부하
+    - duration: 30
+      arrivalRate: 3
+      name: "Low load - 초당 3명"
+    
+    # 2단계: 중규모 부하
+    - duration: 60
+      arrivalRate: 3
+      rampTo: 15
+      name: "Medium load - 3명에서 15명으로 증가"
+    
+    # 3단계: 고부하 유지
+    - duration: 90
+      arrivalRate: 15
+      name: "High load - 1분 30초간 초당 15명 유지"
+    
+    # 4단계: 스파이크 테스트 (이벤트/핫딜 상황)
+    - duration: 30
+      arrivalRate: 40
+      name: "Spike - 30초간 초당 40명 진입"
+    
+    # 5단계: 정리
+    - duration: 20
+      arrivalRate: 3
+      name: "Cool down"
+  
+  # Auth Token은 scripts/get-token.ps1로 생성됩니다
+  # 유효 토큰은 24시간 후 만료됩니다 - npm run token으로 갱신하세요
+  variables:
+    authToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiM2ZhN2VlYTMtYzliMC00ZjZlLTk2ZDktZDBmODA3YWY1YjMxIiwiZW1haWwiOiJkb2cwMjZAbmF2ZXIuY29tIiwibmlja25hbWUiOiLsnKDsoJXrrYnsuZgiLCJyb2xlIjowLCJpYXQiOjE3NjcxNzEyNjAsImV4cCI6MTc2NzI1NzY2MH0.k6HMQ6AhC9_NXe__jneNKSIX2SQTIZrind66nHOoyas"
+  
+  http:
+    timeout: 25  # 타겟 서버에 무리가지 않도록
+  
+  ensure:
+    maxErrorRate: 3
+    p99: 4000
+    p95: 2000
+  
+  plugins:
+    expect: {}
+
+scenarios:
+  # 시나리오 1: 레시피 상세 조회
+  - name: "Recipe Detail - View"
+    weight: 60
+    flow:
+      # 먼저 피드에서 레시피 ID 가져오기
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          capture:
+            - json: "$.data[0].recipe_post_id"
+              as: "targetRecipeId"
+      
+      # 사용자가 스크롤하며 레시피 선택하는 시간
+      - think: 2
+      
+      # 레시피 상세 조회
+      - get:
+          url: "/recipes/{{ targetRecipeId }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+      
+      # 레시피 읽는 시간
+      - think: 7
+
+  # 시나리오 2: 레시피 조회 + 좋아요
+  - name: "Recipe Detail - View & Like"
+    weight: 30
+    flow:
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          capture:
+            - json: "$.data[0].recipe_post_id"
+              as: "targetRecipeId"
+      
+      - think: 1
+      
+      - get:
+          url: "/recipes/{{ targetRecipeId }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+      
+      - think: 5
+      
+      # 좋아요
+      - post:
+          url: "/recipes/{{ targetRecipeId }}/like"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: [200, 201]
+
+  # 시나리오 3: 레시피 조회 + 댓글 작성
+  - name: "Recipe Detail - View & Comment"
+    weight: 10
+    flow:
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          capture:
+            - json: "$.data[0].recipe_post_id"
+              as: "targetRecipeId"
+      
+      - think: 2
+      
+      - get:
+          url: "/recipes/{{ targetRecipeId }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+      
+      - think: 10
+      
+      # 댓글 작성
+      - post:
+          url: "/recipes/{{ targetRecipeId }}/comments"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+            Content-Type: "application/json"
+          json:
+            content: "맛있게 보여요! 더 부하 테스트 댓글입니다."
+          expect:
+            - statusCode: [200, 201]
+
+# Windows 실행 방법:
+# npm run test:detail

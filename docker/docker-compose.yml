@@ -1,0 +1,199 @@
+# ============================================================
+# Babple 프로젝트 Docker Compose 설정 파일
+# 프리티어 환경에 최적화된 단일 서버 구성
+# ============================================================
+
+# 서비스 정의
+services:
+  # ============================================================
+  # PostgreSQL 데이터베이스
+  # ============================================================
+  postgres:
+    # PostGIS 확장이 포함된 PostgreSQL 이미지 사용
+    # 15-3.3: PostgreSQL 15 버전 + PostGIS 3.3 버전
+    image: postgis/postgis:15-3.3-alpine
+    container_name: babple-postgres
+    
+    # 컨테이너 재시작 정책
+    # always: 항상 재시작 (크래시 시 자동 재시작)
+    restart: always
+    
+    # 환경 변수 설정
+    environment:
+      # 데이터베이스 이름
+      POSTGRES_DB: postgres
+      # 데이터베이스 사용자 이름
+      POSTGRES_USER: postgres
+      # 데이터베이스 비밀번호 (프로덕션에서는 환경 변수나 Secret 사용)
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    
+    # 볼륨 마운트
+    # 데이터베이스 데이터를 호스트에 저장하여 컨테이너 삭제 시에도 데이터 유지
+    volumes:
+      # 데이터 디렉토리: 호스트의 ./data/postgres를 컨테이너의 /var/lib/postgresql/data에 마운트
+      - ./data/postgres:/var/lib/postgresql/data
+    
+    # 포트 매핑
+    # 호스트:컨테이너 형식
+    # 호스트의 5432 포트를 컨테이너의 5432 포트에 연결
+    # 외부에서 접근할 필요가 없으면 포트 매핑 제거 가능
+    ports:
+      - "5432:5432"
+    
+    # 리소스 제한 (프리티어 환경 최적화)
+    deploy:
+      resources:
+        limits:
+          # 최대 메모리 사용량: 400MB
+          memory: 400M
+          # 최대 CPU 사용량: 0.5 core
+          cpus: '0.5'
+        reservations:
+          # 예약 메모리: 200MB
+          memory: 200M
+          # 예약 CPU: 0.25 core
+          cpus: '0.25'
+    
+    # 헬스 체크
+    healthcheck:
+      # PostgreSQL이 준비되었는지 확인
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s      # 10초마다 체크
+      timeout: 5s        # 5초 타임아웃
+      retries: 5         # 5번 실패하면 비정상으로 판단
+      start_period: 30s  # 시작 후 30초 동안은 실패해도 무시
+
+  # ============================================================
+  # Backend API 서버
+  # ============================================================
+  backend:
+    # 로컬에서 빌드한 이미지 사용
+    # docker-compose build로 이미지 생성 필요
+    build:
+      # Dockerfile 위치 (프로젝트 루트 기준)
+      context: ../backend
+      dockerfile: Dockerfile
+    
+    container_name: babple-backend
+    
+    # 컨테이너 재시작 정책
+    restart: always
+    
+    # 환경 변수 파일 사용
+    env_file:
+      - ../backend/.env
+    
+    # 환경 변수 오버라이드 (docker-compose에서 직접 설정)
+    environment:
+      # 데이터베이스 호스트: Docker Compose 서비스 이름 사용
+      DB_HOST: postgres
+      DB_PORT: 5432
+    
+    # 포트 매핑 (개발/디버깅용, 프로덕션에서는 Nginx만 노출)
+    ports:
+      - "3000:3000"
+    
+    # 볼륨 마운트
+    volumes:
+      # 업로드된 파일 저장 (영구 저장)
+      - ./data/uploads:/app/uploads
+      # .env 파일 마운트 (환경 변수 파일)
+      - ../backend/.env:/app/.env:ro
+      # Firebase 서비스 계정 파일 마운트 (푸시 알림용)
+      # 실제 파일명에 맞게 수정 필요 (예: babple-b9022-0445136a2c90.json)
+      - ../backend/babple-b9022-0445136a2c90.json:/app/babple-b9022-0445136a2c90.json:ro
+      # 개발 모드: 소스 코드 마운트 (핫 리로드, 프로덕션에서는 제거)
+      # - ../backend/src:/app/src
+      # - ../backend/dist:/app/dist
+    
+    # 다른 서비스 의존성
+    # PostgreSQL이 준비된 후에만 시작
+    depends_on:
+      postgres:
+        condition: service_healthy  # 헬스 체크 통과 후 시작
+    
+    # 리소스 제한
+    deploy:
+      resources:
+        limits:
+          memory: 400M  # 최대 400MB
+          cpus: '0.5'
+        reservations:
+          memory: 200M
+          cpus: '0.25'
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================
+  # Web Frontend (Nginx)
+  # ============================================================
+  web:
+    # 로컬에서 빌드한 이미지 사용
+    build:
+      context: ../babpleWeb
+      dockerfile: Dockerfile
+      args:
+        # API Base URL (환경 변수로 설정 가능, 기본값은 로컬용)
+        # 서버 배포 시 docker/.env 파일에 VITE_API_BASE_URL 설정
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://choonhost.zapto.org}
+    
+    container_name: babple-web
+    
+    # 컨테이너 재시작 정책
+    restart: always
+    
+    # 포트 매핑
+    # HTTP: 80 포트
+    ports:
+      - "80:80"
+      # HTTPS를 위한 443 포트 (SSL 설정 후)
+      # - "443:443"
+    
+    # Nginx 설정 파일 마운트 (커스텀 설정이 필요한 경우)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # SSL 인증서 마운트 (SSL 설정 후)
+      # - ./nginx/ssl:/etc/nginx/ssl:ro
+    
+    # Backend 서비스에 의존
+    depends_on:
+      - backend
+    
+    # 리소스 제한
+    deploy:
+      resources:
+        limits:
+          memory: 50M   # Nginx는 매우 경량
+          cpus: '0.1'
+        reservations:
+          memory: 25M
+          cpus: '0.05'
+    
+    # 헬스 체크
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+# ============================================================
+# 볼륨 정의 (선택사항)
+# 네임드 볼륨이 필요한 경우 아래 주석을 해제하세요
+# ============================================================
+# volumes:
+#   postgres_data:
+
+# ============================================================
+# 네트워크 정의 (선택사항)
+# ============================================================
+# networks:
+#   default:
+#     driver: bridge
+

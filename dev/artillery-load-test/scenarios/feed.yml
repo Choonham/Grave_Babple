@@ -1,0 +1,122 @@
+# 피드 조회 부하 테스트
+# 사용 화면: HomeScreen.tsx
+# 엔드포인트: GET /api/recipes/feed
+# 타겟 서버: https://babpleAlpha.slowflowsoft.com
+
+config:
+  target: "https://babpleAlpha.slowflowsoft.com/api"
+  phases:
+    # 1단계: Warm-up (준비 가동)
+    - duration: 30
+      arrivalRate: 5
+      name: "Warm up - 초당 5명"
+    
+    # 2단계: Ramp-up (점진적 증가)
+    - duration: 60
+      arrivalRate: 5
+      rampTo: 20
+      name: "Ramp up - 5명에서 20명으로 증가"
+    
+    # 3단계: Sustained Load (지속 부하)
+    - duration: 120
+      arrivalRate: 20
+      name: "Sustained load - 2분간 초당 20명 유지"
+    
+    # 4단계: Spike Load (트래픽 급증 - 바이럴 상황)
+    - duration: 30
+      arrivalRate: 50
+      name: "Spike load - 30초간 초당 50명 (바이럴)"
+    
+    # 5단계: Cool down (정리)
+    - duration: 30
+      arrivalRate: 5
+      name: "Cool down - 초당 5명으로 감소"
+  
+  # 환경 변수 설정
+  # Auth Token은 scripts/get-token.ps1로 생성됩니다
+  # 유효 토큰은 24시간 후 만료됩니다 - npm run token으로 갱신하세요
+  variables:
+    authToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiM2ZhN2VlYTMtYzliMC00ZjZlLTk2ZDktZDBmODA3YWY1YjMxIiwiZW1haWwiOiJkb2cwMjZAbmF2ZXIuY29tIiwibmlja25hbWUiOiLsnKDsoJXrrYnsuZgiLCJyb2xlIjowLCJpYXQiOjE3NjcxNzEyNjAsImV4cCI6MTc2NzI1NzY2MH0.k6HMQ6AhC9_NXe__jneNKSIX2SQTIZrind66nHOoyas"
+  
+  # HTTP 설정 (타겟 서버에 무리가지 않도록)
+  http:
+    timeout: 20  # 20초 타임아웃  
+  # 성능 메트릭 임계값 (타겟 서버에 너무 관대하지 않게)
+  ensure:
+    maxErrorRate: 2        # 에러율 2% 미만
+    p99: 3000              # 99%의 요청이 3초 안에 완료
+    p95: 1500              # 95%의 요청이 1.5초 안에 완료
+
+  # 플러그인 설정
+  plugins:
+    expect: {}
+
+scenarios:
+  # 시나리오 1: 기본 피드 조회
+  - name: "Feed - Basic Load"
+    weight: 70  # 전체 요청의 70%
+    flow:
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+            Content-Type: "application/json"
+          capture:
+            - json: "$.success"
+              as: "success"
+            - json: "$.data[0].recipe_post_id"
+              as: "firstRecipeId"
+          expect:
+            - statusCode: 200
+            - contentType: json
+            - hasProperty: success
+            - equals:
+                - "true"
+                - "{{ success }}"
+
+      # 피드 조회 후 대기 (실제 사용자처럼)
+      - think: 2
+
+  # 시나리오 2: 피드 조회 + 새로고침 (Pull to Refresh)
+  - name: "Feed - Refresh"
+    weight: 20  # 전체 요청의 20%
+    flow:
+      # 첫 번째 피드 조회
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+
+      # 스크롤 중 대기
+      - think: 5
+
+      # 새로고침
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          expect:
+            - statusCode: 200
+
+  # 시나리오 3: 인증 실패 시나리오 (잘못된 토큰)
+  - name: "Feed - Auth Failure"
+    weight: 10  # 전체 요청의 10%
+    flow:
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer invalid_token_12345"
+          expect:
+            - statusCode: 401
+
+# Windows 실행 방법:
+# 1. 토큰 발급:
+#    npm run token
+#
+# 2. 기본 실행:
+#    npm run test:feed
+#
+# 3. 리포트 생성:
+#    npm run report

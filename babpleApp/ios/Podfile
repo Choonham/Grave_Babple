@@ -1,0 +1,72 @@
+require 'json'
+
+# [핵심 1] Node require 함수 정의 (보내준 파일 참고)
+def node_require(script)
+  require Pod::Executable.execute_command('node', ['-p',
+    "require.resolve(
+      '#{script}',
+      {paths: [process.argv[1]]},
+    )", __dir__]).strip
+end
+
+node_require('react-native/scripts/react_native_pods.rb')
+node_require('react-native-permissions/scripts/setup.rb')
+
+# [핵심 2] iOS 버전 맞춤 (보내준 파일처럼 15.5로 설정하거나 14.0 이상 권장)
+platform :ios, '15.5'
+prepare_react_native_project!
+
+# [핵심 3] 정적 프레임워크 강제 설정 (이게 해결사입니다!)
+use_frameworks! :linkage => :static
+
+# 권한 설정 (기존 요청사항 반영)
+setup_permissions([
+  'Camera',
+  'LocationWhenInUse',
+  'PhotoLibrary',
+  'Notifications',
+])
+
+target 'babpleApp' do
+  use_modular_headers!
+  
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  # [핵심 4] 성공한 프로젝트처럼 Firebase 명시적 추가 + modular_headers 옵션
+  # Autolinking이 되더라도 use_frameworks! 환경에서는 이렇게 명시해주는 게 안전합니다.
+  pod 'FirebaseAppCheck', :modular_headers => true
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseInstallations', :modular_headers => true
+  pod 'FirebaseMessaging', :modular_headers => true
+  pod 'GoogleUtilities', :modular_headers => true
+
+  # [참고] Google Maps나 Lottie는 설치되어 있다면 주석 해제하세요.
+  # pod 'react-native-google-maps', :path => '../node_modules/react-native-maps', :modular_headers => true
+  # pod 'GoogleMaps'
+  # pod 'Google-Maps-iOS-Utils'
+  # pod 'lottie-react-native', :path => '../node_modules/lottie-react-native'
+
+  post_install do |installer|
+    react_native_post_install(
+      installer,
+      config[:reactNativePath],
+      :mac_catalyst_enabled => false
+    )
+
+    # 빌드 세팅 강제 조정 (성공한 프로젝트 로직 반영)
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
+        
+        # [핵심 5] 헤더 경로 문제 방지 (헤더를 못 찾는 문제 해결)
+        config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      end
+    end
+  end
+end

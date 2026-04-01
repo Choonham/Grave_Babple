@@ -1,0 +1,181 @@
+# 실전 혼합 시나리오 부하 테스트 (단축 버전)
+# 실제 사용자 행동 패턴 시뮬레이션
+# 원격 서버: https://babpleAlpha.slowflowsoft.com
+#
+# ⚙️ 부하 조정 이력:
+# - 서버 Rate Limit: 비활성화 (부하 테스트용)
+# - 2025-12-27: 5분 단축 테스트 구성
+#   현재: 2->5, 5->8, 8->10, 5->2, 1/초
+# - 예상 부하: ~882 req/min (제한 없음)
+# - 총 소요 시간: 300초 (5분)
+# - 예상 총 요청: 약 1,100~1,200개 (시간 단축에 따른 조정)
+
+config:
+  target: "https://babpleAlpha.slowflowsoft.com/api"
+  processor: "../processors.js"
+  defaults:
+    headers:
+      "Accept-Encoding": "gzip, deflate" # 압축 해제를 명시하여 정확한 길이 측정 시도
+  phases:
+    # 아침 시간대 (오전 7-9시) - 워밍업
+    - duration: 60
+      arrivalRate: 5
+      rampTo: 10
+      name: "Morning Rush - 워밍업"
+    
+    # 점심 시간대 (오후 12-1시) - 1차 피크
+    - duration: 80
+      arrivalRate: 10
+      rampTo: 20
+      name: "Lunch Peak - 점심 피크"
+    
+    # 저녁 시간대 (오후 6-8시) - 최대 트래픽 (목표: 초당 20명 진입)
+    - duration: 100
+      arrivalRate: 20
+      rampTo: 40
+      name: "Dinner Peak - 최대 부하"
+    
+    # 밤 시간대 - 쿨다운
+    - duration: 40
+      arrivalRate: 40
+      rampTo: 5
+      name: "Evening - 쿨다운"
+    
+    # 새벽
+    - duration: 20
+      arrivalRate: 5
+      rampTo: 1
+      name: "Late Night - 마무리"
+  
+  variables:
+    authToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiM2ZhN2VlYTMtYzliMC00ZjZlLTk2ZDktZDBmODA3YWY1YjMxIiwiZW1haWwiOiJkb2cwMjZAbmF2ZXIuY29tIiwibmlja25hbWUiOiLsnKDsoJXrrYnsuZgiLCJyb2xlIjowLCJpYXQiOjE3NjcxNzEyNjAsImV4cCI6MTc2NzI1NzY2MH0.k6HMQ6AhC9_NXe__jneNKSIX2SQTIZrind66nHOoyas"
+  
+  http:
+    timeout: 60
+  
+  ensure:
+    maxErrorRate: 2
+    p99: 3500
+    p95: 1500
+  
+  plugins:
+    expect: {}
+
+scenarios:
+  # 시나리오 1: 캐주얼 사용자 (보기만 함)
+  - name: "User Journey - Casual Browser"
+    weight: 50
+    flow:
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          capture:
+            - json: "$.data[0].recipe_post_id"
+              as: "recipe1Id"
+            - json: "$.data[1].recipe_post_id"
+              as: "recipe2Id"
+          expect:
+            - statusCode: 200
+      - think: 4
+      - get:
+          url: "/recipes/{{ recipe1Id }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          expect:
+            - statusCode: 200
+      - think: 12
+      - get:
+          url: "/recipes/{{ recipe2Id }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          expect:
+            - statusCode: 200
+      - think: 8
+
+  # 시나리오 2: 액티브 사용자 (좋아요 + 댓글)
+  - name: "User Journey - Active User"
+    weight: 30
+    flow:
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          capture:
+            - json: "$.data[0].recipe_post_id"
+              as: "targetRecipeId"
+          expect:
+            - statusCode: 200
+      - think: 3
+      - get:
+          url: "/recipes/{{ targetRecipeId }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          expect:
+            - statusCode: 200
+      - think: 15
+      - post:
+          url: "/recipes/{{ targetRecipeId }}/like"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          expect:
+            - statusCode: [200, 201]
+      - think: 10
+      - post:
+          url: "/recipes/{{ targetRecipeId }}/comments"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+            Content-Type: "application/json"
+          json:
+            content: "맛있어 보여요! 👍"
+          afterResponse: "logContentLength"
+          expect:
+            - statusCode: [200, 201]
+      - think: 3
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          expect:
+            - statusCode: 200
+
+  # 시나리오 3: 검색 사용자
+  - name: "User Journey - Searcher"
+    weight: 20
+    flow:
+      - get:
+          url: "/recipes/feed"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          expect:
+            - statusCode: 200
+      - think: 5
+      - get:
+          url: "/recipes/search"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          qs:
+            keyword: "감자"
+          afterResponse: "logContentLength"
+          capture:
+            - json: "$.data[0].recipe_post_id"
+              as: "searchResultId"
+          expect:
+            - statusCode: 200
+      - think: 3
+      - get:
+          url: "/recipes/{{ searchResultId }}"
+          headers:
+            Authorization: "Bearer {{ authToken }}"
+          afterResponse: "logContentLength"
+          expect:
+            - statusCode: 200
+      - think: 15

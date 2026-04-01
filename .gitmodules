@@ -1,0 +1,10 @@
+[submodule "backend"]
+	path = backend
+	url = https://github.com/Choonham/babple_server.git
+[submodule "babpleWeb"]
+	path = babpleWeb
+	url = https://github.com/Choonham/babple_web.git
+[submodule "babpleApp"]
+	path = babpleApp
+	url = https://github.com/Choonham/babple_app.git
+

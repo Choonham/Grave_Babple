@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "700301965010",
+    "project_id": "babple-b9022",
+    "storage_bucket": "babple-b9022.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:700301965010:android:6ff9fbf71cf10cf5dd5f0b",
+        "android_client_info": {
+          "package_name": "com.babpleapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "700301965010-eog438ds3elnsa0rqdf6ju9lt6aavfle.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.babpleapp",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "700301965010-h9ff9dj662pa6irnjv506532lukd6in5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.babpleapp",
+            "certificate_hash": "1b0a06c8ef8364bea2e5fc52a6119e0843cb60a2"
+          }
+        },
+        {
+          "client_id": "700301965010-pul3jbn9tjli4k4mu3h34l6donv72m3a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.babpleapp",
+            "certificate_hash": "048206ef125cfd0a26e2cff08cac61cbec915165"
+          }
+        },
+        {
+          "client_id": "700301965010-9r1c1vn87u65ss1hnk8vc2goqbs1nci1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "YOUR_API_KEY_HERE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "700301965010-9r1c1vn87u65ss1hnk8vc2goqbs1nci1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

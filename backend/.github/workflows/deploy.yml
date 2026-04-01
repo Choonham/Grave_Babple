@@ -1,0 +1,39 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          # backend 디렉토리로 이동하여 최신 코드 가져오기
+          cd ~/babple/backend
+          git fetch origin
+          git reset --hard origin/main
+          
+          # 의존성 설치 및 빌드
+          npm ci
+          npm run build
+          
+          # Docker Compose로 백엔드 서비스 재빌드 및 재시작
+          cd ~/babple/docker
+          docker compose build backend
+          docker compose up -d backend
+          
+          # 배포 완료 확인
+          echo "✅ backend 배포 완료"
+          docker compose ps backend
